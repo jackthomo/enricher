@@ -42,54 +42,218 @@ type StepEntry = {
   output_keys?: string[];
 };
 
-const DEFAULT_SCHEMA = JSON.stringify(
-  {
-    type: "object",
-    properties: {
-      providers: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            name: { type: "string", description: "Company name" },
-            technology_summary: {
-              type: "string",
-              description: "Brief summary of chip technology for LLM training",
-            },
-            current_market_share: {
-              type: "string",
-              description: "Estimated current market share",
-            },
-            future_outlook: {
-              type: "string",
-              description: "Outlook for the next 12 months",
-            },
-          },
-          required: [
-            "name",
-            "technology_summary",
-            "current_market_share",
-            "future_outlook",
-          ],
-        },
-        description: "List of top chip providers for LLM training",
-      },
-      overall_market_trends: {
-        type: "string",
-        description: "Brief paragraph on general trends in the LLM chip market",
-      },
+type JsonSchema = {
+  type?: string | string[];
+  description?: string;
+  properties?: Record<string, JsonSchema>;
+  items?: JsonSchema;
+  required?: string[];
+};
+
+type SchemaFieldRow = {
+  field: string;
+  type: string;
+  required: boolean;
+  description?: string;
+};
+
+type ColumnType = "string" | "number" | "boolean" | "array" | "object";
+
+type ColumnSpec = {
+  id: string;
+  name: string;
+  type: ColumnType;
+  description: string;
+  required: boolean;
+};
+
+const toTableRows = (data: unknown): Array<{ key: string; value: string }> => {
+  if (data === null || data === undefined) {
+    return [{ key: "value", value: "null" }];
+  }
+  if (typeof data !== "object") {
+    return [{ key: "value", value: String(data) }];
+  }
+  if (Array.isArray(data)) {
+    return data.map((item, idx) => ({
+      key: `[${idx}]`,
+      value:
+        typeof item === "object" ? JSON.stringify(item, null, 2) : String(item),
+    }));
+  }
+  return Object.entries(data).map(([k, v]) => ({
+    key: k,
+    value: typeof v === "object" ? JSON.stringify(v, null, 2) : String(v),
+  }));
+};
+
+const isArrayOfObjects = (val: unknown): val is Array<Record<string, unknown>> =>
+  Array.isArray(val) && val.length > 0 && val.every((item) => typeof item === "object" && item !== null);
+
+const makeId = () => Math.random().toString(36).slice(2, 9);
+
+const createColumn = (
+  name: string,
+  description: string,
+  options?: { required?: boolean; type?: ColumnType }
+): ColumnSpec => ({
+  id: `${name || "column"}-${makeId()}`,
+  name,
+  description,
+  required: options?.required ?? true,
+  type: options?.type ?? "string",
+});
+
+const DEFAULT_COLUMNS: ColumnSpec[] = [
+  createColumn("name", "Company name"),
+  createColumn("technology_summary", "Brief summary of chip technology for LLM training"),
+  createColumn("current_market_share", "Estimated current market share"),
+  createColumn("future_outlook", "Outlook for the next 12 months"),
+];
+
+const normalizeSchemaType = (node: JsonSchema): string => {
+  if (Array.isArray(node.type)) return node.type.join(" | ");
+  if (node.type) return node.type;
+  if (node.properties) return "object";
+  if (node.items) return "array";
+  return "unknown";
+};
+
+const extractSchemaFields = (
+  schema: unknown,
+  path = "",
+  isRequired = false
+): SchemaFieldRow[] => {
+  if (!schema || typeof schema !== "object") return [];
+  const node = schema as JsonSchema;
+  const nodeType = normalizeSchemaType(node);
+  const description = typeof node.description === "string" ? node.description : "";
+
+  if (nodeType === "object" && node.properties) {
+    const requiredSet = new Set(node.required ?? []);
+    return Object.entries(node.properties).flatMap(([key, value]) => {
+      const childPath = path ? `${path}.${key}` : key;
+      const childRequired = requiredSet.has(key);
+      return extractSchemaFields(value, childPath, childRequired);
+    });
+  }
+
+  if (nodeType === "array" && node.items) {
+    const itemPath = `${path}[]`;
+    return extractSchemaFields(node.items, itemPath, isRequired);
+  }
+
+  if (!path) return [];
+
+  return [
+    {
+      field: path,
+      type: nodeType,
+      required: isRequired,
+      description,
     },
-    required: ["providers", "overall_market_trends"],
-  },
-  null,
-  2
+  ];
+};
+
+const InfoTableView = ({ info }: { info: Record<string, unknown> }) => (
+  <div className="space-y-4">
+    {Object.entries(info).map(([key, value]) => {
+      if (isArrayOfObjects(value)) {
+        const columns = Array.from(
+          value.reduce(
+            (set, row) => {
+              Object.keys(row).forEach((k) => set.add(k));
+              return set;
+            },
+            new Set<string>()
+          )
+        );
+        return (
+          <div key={key}>
+            <div className="mb-1 text-sm font-semibold text-slate-100">
+              {key}
+            </div>
+            <div className="overflow-x-auto rounded-md border border-slate-800 bg-slate-950/40">
+              <table className="min-w-full text-left text-xs text-slate-100">
+                <thead className="bg-slate-900/70 text-[11px] uppercase tracking-[0.1em] text-slate-400">
+                  <tr>
+                    {columns.map((col) => (
+                      <th key={col} className="px-3 py-2">
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {value.map((row, ridx) => (
+                    <tr
+                      key={`${key}-row-${ridx}`}
+                      className={
+                        ridx % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/20"
+                      }
+                    >
+                      {columns.map((col) => (
+                        <td key={`${col}-${ridx}`} className="px-3 py-2">
+                          <span className="font-mono whitespace-pre-wrap text-slate-100">
+                            {typeof row[col] === "object"
+                              ? JSON.stringify(row[col], null, 2)
+                              : String(row[col] ?? "")}
+                          </span>
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      }
+      const rows = toTableRows(value);
+      return (
+        <div key={key}>
+          <div className="mb-1 text-sm font-semibold text-slate-100">
+            {key}
+          </div>
+          <div className="overflow-x-auto rounded-md border border-slate-800 bg-slate-950/40">
+            <table className="min-w-full text-left text-xs text-slate-100">
+              <thead className="bg-slate-900/70 text-[11px] uppercase tracking-[0.1em] text-slate-400">
+                <tr>
+                  <th className="px-3 py-2">Key</th>
+                  <th className="px-3 py-2">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => (
+                  <tr
+                    key={`${row.key}-${idx}`}
+                    className={
+                      idx % 2 === 0 ? "bg-slate-900/40" : "bg-slate-900/20"
+                    }
+                  >
+                    <td className="px-3 py-2 font-semibold">{row.key}</td>
+                    <td className="px-3 py-2 font-mono whitespace-pre-wrap text-slate-100">
+                      {row.value}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    })}
+  </div>
 );
 
 export default function Home() {
   const [topic, setTopic] = useState(
     "Top 5 chip providers for LLM training and their market outlook"
   );
-  const [schemaText, setSchemaText] = useState(DEFAULT_SCHEMA);
+  const [columns, setColumns] = useState<ColumnSpec[]>(DEFAULT_COLUMNS);
+  const [summaryPrompt, setSummaryPrompt] = useState(
+    "Add a crisp 2-3 sentence summary capturing key trends across providers."
+  );
   const [config, setConfig] = useState<Configurable>({
     model: "",
     prompt: "",
@@ -106,6 +270,33 @@ export default function Home() {
   const [apiStatus, setApiStatus] = useState<HealthStatus>("unknown");
   const [apiStatusDetail, setApiStatusDetail] = useState("Not checked yet");
   const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [resultView, setResultView] = useState<"table" | "json">("table");
+  const [showConfigModal, setShowConfigModal] = useState(false);
+
+  const handleColumnChange = (
+    id: string,
+    key: "name" | "type" | "description" | "required",
+    value: string | boolean
+  ) => {
+    setColumns((prev) =>
+      prev.map((col) => (col.id === id ? { ...col, [key]: value } : col))
+    );
+  };
+
+  const handleRemoveColumn = (id: string) => {
+    setColumns((prev) => (prev.length <= 1 ? prev : prev.filter((col) => col.id !== id)));
+  };
+
+  const handleAddColumn = () => {
+    setColumns((prev) => [
+      ...prev,
+      createColumn(
+        `column_${prev.length + 1}`,
+        "Describe this field for the model",
+        { required: false }
+      ),
+    ]);
+  };
 
   const cleanedConfig = useMemo(() => {
     const entries = Object.entries(config).filter(
@@ -126,11 +317,9 @@ export default function Home() {
     setSteps([]);
     const abortCtrl = new AbortController();
     setController(abortCtrl);
-    let parsedSchema: Record<string, unknown>;
-    try {
-      parsedSchema = JSON.parse(schemaText);
-    } catch (err) {
-      setError("Extraction schema must be valid JSON");
+    const hasColumns = columns.some((col) => col.name.trim().length > 0);
+    if (!hasColumns) {
+      setError("Add at least one column name to build the dataset schema.");
       return;
     }
 
@@ -148,7 +337,7 @@ export default function Home() {
       configurable?: Configurable;
     } = {
       topic,
-      extraction_schema: parsedSchema,
+      extraction_schema: extractionSchema,
     };
     if (cleanedConfig) {
       payload.configurable = cleanedConfig;
@@ -224,14 +413,67 @@ export default function Home() {
     setIsLoading(false);
   };
 
+  const extractionSchema = useMemo(() => {
+    const properties: Record<string, JsonSchema> = {};
+    const required: string[] = [];
+    columns.forEach((col, idx) => {
+      const key = col.name.trim() || `column_${idx + 1}`;
+      properties[key] = {
+        type: col.type,
+        description: col.description || undefined,
+      };
+      if (col.required) {
+        required.push(key);
+      }
+    });
+    const schema: { type: string; properties: Record<string, JsonSchema>; required: string[] } = {
+      type: "object",
+      properties: {
+        providers: {
+          type: "array",
+          items: {
+            type: "object",
+            properties,
+            required,
+          },
+          description: "Dataset rows for enrichment",
+        },
+      },
+      required: ["providers"],
+    };
+    if (summaryPrompt.trim()) {
+      schema.properties.summary = {
+        type: "string",
+        description: summaryPrompt.trim(),
+      };
+    }
+    return schema;
+  }, [columns, summaryPrompt]);
+
+  const schemaText = useMemo(
+    () => JSON.stringify(extractionSchema, null, 2),
+    [extractionSchema]
+  );
+
   const infoDisplay = useMemo(() => {
     if (!result) return null;
     return JSON.stringify(result.info, null, 2);
   }, [result]);
 
+  const schemaFieldRows = useMemo(
+    () => extractSchemaFields(extractionSchema),
+    [extractionSchema]
+  );
+
+  useEffect(() => {
+    if (result) {
+      setResultView("table");
+    }
+  }, [result]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-100 to-slate-200 text-slate-900">
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto w-full max-w-7xl px-6 py-10 lg:px-10">
         <header className="mb-8">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-500">
             Data Enrichment
@@ -282,10 +524,7 @@ export default function Home() {
           </div>
         </header>
 
-        <form
-          onSubmit={handleSubmit}
-          className="grid gap-6 lg:grid-cols-[1.4fr_1fr]"
-        >
+        <form onSubmit={handleSubmit} className="space-y-6">
           <section className="space-y-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-800">
@@ -301,111 +540,187 @@ export default function Home() {
 
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-800">
-                Extraction schema (JSON)
+                Dataset columns
               </label>
-              <textarea
-                value={schemaText}
-                onChange={(e) => setSchemaText(e.target.value)}
-                rows={14}
-                className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 font-mono text-xs text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
-              />
               <p className="text-xs text-slate-500">
-                Paste any JSON schema describing the structured output you need.
+                Build your dataset columns directly. The JSON schema updates automatically.
               </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {columns.map((col) => (
+                  <div
+                    key={col.id}
+                    className="flex min-w-[240px] flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm"
+                  >
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={col.name}
+                        onChange={(e) => handleColumnChange(col.id, "name", e.target.value)}
+                        placeholder="column_name"
+                        className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveColumn(col.id)}
+                        disabled={columns.length <= 1}
+                        className="rounded-full border border-slate-300 px-2 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                          Type
+                        </p>
+                        <select
+                          value={col.type}
+                          onChange={(e) =>
+                            handleColumnChange(col.id, "type", e.target.value as ColumnType)
+                          }
+                          className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                        >
+                          <option value="string">string</option>
+                          <option value="number">number</option>
+                          <option value="boolean">boolean</option>
+                          <option value="array">array</option>
+                          <option value="object">object</option>
+                        </select>
+                      </div>
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                          Required
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleColumnChange(col.id, "required", !col.required)}
+                          className={`w-full rounded-full px-3 py-2 text-[12px] font-semibold transition ${
+                            col.required
+                              ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
+                              : "bg-slate-200 text-slate-700 ring-1 ring-slate-300 hover:bg-slate-300"
+                          }`}
+                        >
+                          {col.required ? "Required" : "Optional"}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                        Description
+                      </p>
+                      <textarea
+                        value={col.description}
+                        onChange={(e) => handleColumnChange(col.id, "description", e.target.value)}
+                        rows={3}
+                        placeholder="What should the model provide?"
+                        className="w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                      />
+                    </div>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={handleAddColumn}
+                  className="flex min-h-[180px] min-w-[240px] flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 bg-white text-sm font-semibold text-slate-600 transition hover:border-slate-400 hover:bg-slate-50"
+                >
+                  + Add column
+                  <span className="text-xs text-slate-500">Columns will wrap on smaller screens</span>
+                </button>
+              </div>
             </div>
-
-            <div className="grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-800">
-                  Model (optional)
-                </label>
-                <input
-                  value={config.model ?? ""}
-                  onChange={(e) =>
-                    setConfig((prev) => ({ ...prev, model: e.target.value }))
-                  }
-                  placeholder="anthropic/claude-3-5-sonnet-20240620"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-800">
-                  Max search results
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={config.max_search_results ?? ""}
-                  onChange={(e) =>
-                    setConfig((prev) => ({
-                      ...prev,
-                      max_search_results:
-                        e.target.value === ""
-                          ? undefined
-                          : Number(e.target.value),
-                    }))
-                  }
-                  placeholder="5"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-800">
-                  Max Info tool calls
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={config.max_info_tool_calls ?? ""}
-                  onChange={(e) =>
-                    setConfig((prev) => ({
-                      ...prev,
-                      max_info_tool_calls:
-                        e.target.value === ""
-                          ? undefined
-                          : Number(e.target.value),
-                    }))
-                  }
-                  placeholder="3"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-semibold text-slate-800">
-                  Max loops
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  value={config.max_loops ?? ""}
-                  onChange={(e) =>
-                    setConfig((prev) => ({
-                      ...prev,
-                      max_loops:
-                        e.target.value === ""
-                          ? undefined
-                          : Number(e.target.value),
-                    }))
-                  }
-                  placeholder="6"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
-                />
-              </div>
-            </div>
-
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-800">
-                Prompt override (optional)
+                Summary prompt
               </label>
-              <textarea
-                value={config.prompt ?? ""}
-                onChange={(e) =>
-                  setConfig((prev) => ({ ...prev, prompt: e.target.value }))
-                }
-                rows={4}
-                placeholder="Custom prompt with {info} and {topic}"
+              <input
+                value={summaryPrompt}
+                onChange={(e) => setSummaryPrompt(e.target.value)}
+                placeholder="e.g. Add a concise summary of the overall market outlook"
                 className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
               />
+              <p className="text-xs text-slate-500">
+                Optional summary returned alongside the table (replaces the previous market trends field).
+              </p>
+            </div>
+            <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-800">
+                  Generated schema (read-only)
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Synced to the backend
+                </span>
+              </div>
+              <div className="max-h-[280px] overflow-auto rounded-md border border-slate-200 bg-white">
+                <pre className="whitespace-pre px-3 py-2 font-mono text-xs text-slate-800">
+                  {schemaText}
+                </pre>
+              </div>
+              {schemaFieldRows.length ? (
+                <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+                  <table className="min-w-full text-left text-xs text-slate-800">
+                    <thead className="bg-slate-100 text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Field</th>
+                        <th className="px-3 py-2">Type</th>
+                        <th className="px-3 py-2">Required</th>
+                        <th className="px-3 py-2">Description</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {schemaFieldRows.map((row) => (
+                        <tr
+                          key={row.field}
+                          className="odd:bg-slate-50 even:bg-white"
+                        >
+                          <td className="px-3 py-2 font-semibold font-mono">
+                            {row.field}
+                          </td>
+                          <td className="px-3 py-2">{row.type}</td>
+                          <td className="px-3 py-2">
+                            <span
+                              className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${
+                                row.required
+                                  ? "bg-emerald-100 text-emerald-700"
+                                  : "bg-slate-200 text-slate-700"
+                              }`}
+                            >
+                              {row.required ? "Yes" : "No"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-600">
+                            {row.description || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Add columns to generate a schema preview.
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">
+                  Run settings
+                </p>
+                <p className="text-xs text-slate-500">
+                  Model, limits, and prompt overrides live in the settings modal.
+                </p>
+                <p className="text-xs text-slate-500">
+                  Current model: {config.model ? config.model : "Provider default"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowConfigModal(true)}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
+              >
+                Open settings
+              </button>
             </div>
 
             <div className="flex items-center justify-between pt-2">
@@ -451,9 +766,42 @@ export default function Home() {
               </span>
             </div>
             <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-              <div className="min-h-[400px] rounded-xl bg-slate-950/50 p-4 font-mono text-xs text-slate-100 ring-1 ring-slate-700">
-                {infoDisplay ? (
-                  <pre className="whitespace-pre-wrap">{infoDisplay}</pre>
+              <div className="min-h-[400px] rounded-xl bg-slate-950/50 p-4 text-slate-100 ring-1 ring-slate-700">
+                <div className="mb-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setResultView("table")}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                      resultView === "table"
+                        ? "bg-white text-slate-900"
+                        : "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                    }`}
+                  >
+                    Table view
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResultView("json")}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                      resultView === "json"
+                        ? "bg-white text-slate-900"
+                        : "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                    }`}
+                  >
+                    Raw JSON
+                  </button>
+                  <span className="text-[11px] text-slate-400">
+                    Toggle how enriched data is shown
+                  </span>
+                </div>
+                {result ? (
+                  resultView === "table" ? (
+                    <InfoTableView info={result.info} />
+                  ) : infoDisplay ? (
+                    <pre className="font-mono text-xs whitespace-pre-wrap">
+                      {infoDisplay}
+                    </pre>
+                  ) : null
                 ) : (
                   <p className="text-slate-400">
                     Submit a request to see the graph output here.
@@ -573,6 +921,126 @@ export default function Home() {
             </div>
           </section>
         </form>
+        {showConfigModal ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4">
+            <div
+              className="absolute inset-0"
+              onClick={() => setShowConfigModal(false)}
+              aria-label="Close settings"
+            />
+            <div className="relative z-10 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                    Run settings
+                  </p>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    Model & limits
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConfigModal(false)}
+                  className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-800">
+                    Model (optional)
+                  </label>
+                  <input
+                    value={config.model ?? ""}
+                    onChange={(e) =>
+                      setConfig((prev) => ({ ...prev, model: e.target.value }))
+                    }
+                    placeholder="anthropic/claude-3-5-sonnet-20240620"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-800">
+                    Max search results
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={config.max_search_results ?? ""}
+                    onChange={(e) =>
+                      setConfig((prev) => ({
+                        ...prev,
+                        max_search_results:
+                          e.target.value === ""
+                            ? undefined
+                            : Number(e.target.value),
+                      }))
+                    }
+                    placeholder="5"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-800">
+                    Max Info tool calls
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={config.max_info_tool_calls ?? ""}
+                    onChange={(e) =>
+                      setConfig((prev) => ({
+                        ...prev,
+                        max_info_tool_calls:
+                          e.target.value === ""
+                            ? undefined
+                            : Number(e.target.value),
+                      }))
+                    }
+                    placeholder="3"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-800">
+                    Max loops
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={config.max_loops ?? ""}
+                    onChange={(e) =>
+                      setConfig((prev) => ({
+                        ...prev,
+                        max_loops:
+                          e.target.value === ""
+                            ? undefined
+                            : Number(e.target.value),
+                      }))
+                    }
+                    placeholder="6"
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                  />
+                </div>
+              </div>
+              <div className="mt-4 space-y-2">
+                <label className="text-sm font-semibold text-slate-800">
+                  Prompt override (optional)
+                </label>
+                <textarea
+                  value={config.prompt ?? ""}
+                  onChange={(e) =>
+                    setConfig((prev) => ({ ...prev, prompt: e.target.value }))
+                  }
+                  rows={4}
+                  placeholder="Custom prompt with {info} and {topic}"
+                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                />
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

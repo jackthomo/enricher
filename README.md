@@ -12,4 +12,8 @@ To run:
 bun run index.ts
 ```
 
+```bash
+uvicorn enrichment_agent.api:app --host 0.0.0.0 --port 8000 --reload   
+```
+
 This project was created using `bun init` in bun v1.3.0. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

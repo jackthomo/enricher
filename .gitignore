@@ -12,3 +12,5 @@ __pycache__
 .DS_Store
 .idea
 .vscode
+.langgraph_api
+enrich/.langgraph_api
