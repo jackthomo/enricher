@@ -5,6 +5,7 @@ Works with a chat model with tool calling support.
 
 import logging
 import json
+import time
 from typing import Any, Dict, List, Literal, Optional, cast
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -49,6 +50,51 @@ async def call_agent_model(
     p = configuration.prompt.format(
         info=json.dumps(state.extraction_schema, indent=2), topic=state.topic
     )
+    elapsed = time.monotonic() - state.start_time
+    remaining_loops = max(configuration.max_loops - state.loop_step, 0)
+    remaining_info_calls = max(configuration.max_info_tool_calls - state.info_call_count, 0)
+    remaining_seconds = max(configuration.max_time_seconds - int(elapsed), 0)
+    constraint_lines = [
+        f"Remaining loops before wrap-up: {remaining_loops} (max {configuration.max_loops}).",
+        f"Remaining Info submissions: {remaining_info_calls} (max {configuration.max_info_tool_calls}).",
+        f"Time budget: {configuration.max_time_seconds}s total; elapsed ~{int(elapsed)}s; remaining ~{remaining_seconds}s.",
+        f"Search results per query are capped at {configuration.max_search_results}. Minimize tool calls; prefer reusing gathered info.",
+        "If remaining loops or time are low, prioritize calling the Info tool with best-effort output instead of additional searches.",
+    ]
+    p = "\n".join(
+        [
+            "RUN CONSTRAINTS:",
+            *constraint_lines,
+            "",
+            p,
+        ]
+    )
+    if state.input_rows:
+        try:
+            rows_text = json.dumps(state.input_rows, indent=2)
+        except TypeError:
+            rows_text = str(state.input_rows)
+        p += (
+            f"\n\nThe user provided {len(state.input_rows)} input row(s) (from CSV). "
+            "Use these as the batch to enrich: keep provided values and fill missing fields according to the schema. "
+            "Do not add or remove rows unless explicitly asked."
+            f"\n<input_rows>\n{rows_text}\n</input_rows>"
+        )
+    wrap_up_notes: list[str] = []
+    if state.info_call_count >= configuration.max_info_tool_calls:
+        wrap_up_notes.append(
+            "You have reached the maximum allowed Info tool submissions. Provide your best-effort final answer now. Avoid extra searches or scrapes unless absolutely critical. Call the Info tool exactly once to return what you have."
+        )
+    if state.loop_step >= configuration.max_loops:
+        wrap_up_notes.append(
+            "You are at the loop limit. Provide your best-effort final answer now using the Info tool and avoid further tool calls."
+        )
+    if elapsed >= configuration.max_time_seconds:
+        wrap_up_notes.append(
+            f"You have reached the time limit ({configuration.max_time_seconds}s). Provide your best-effort final answer now. Avoid any additional tool calls unless necessary to complete the Info response."
+        )
+    if wrap_up_notes:
+        p += "\n\nWRAP UP INSTRUCTIONS:\n- " + "\n- ".join(wrap_up_notes)
 
     # Create the messages list with the formatted prompt and the previous messages
     messages = [HumanMessage(content=p)] + state.messages
@@ -97,6 +143,7 @@ async def call_agent_model(
         "info": info,
         # Add 1 to the step count
         "loop_step": 1,
+        "info_call_count": 1 if info is not None else 0,
     }
 
 
@@ -129,9 +176,37 @@ async def reflect(
     5. Invokes the model to assess the quality of the gathered information.
     6. Processes the model's response and determines if the info is satisfactory.
     """
+    configuration = Configuration.from_runnable_config(config)
     p = prompts.MAIN_PROMPT.format(
         info=json.dumps(state.extraction_schema, indent=2), topic=state.topic
     )
+    elapsed = time.monotonic() - state.start_time
+    remaining_loops = max(configuration.max_loops - state.loop_step, 0)
+    remaining_info_calls = max(configuration.max_info_tool_calls - state.info_call_count, 0)
+    remaining_seconds = max(configuration.max_time_seconds - int(elapsed), 0)
+    constraint_lines = [
+        f"Remaining loops before wrap-up: {remaining_loops} (max {configuration.max_loops}).",
+        f"Remaining Info submissions: {remaining_info_calls} (max {configuration.max_info_tool_calls}).",
+        f"Time budget: {configuration.max_time_seconds}s total; elapsed ~{int(elapsed)}s; remaining ~{remaining_seconds}s.",
+    ]
+    p = "\n".join(
+        [
+            "RUN CONSTRAINTS:",
+            *constraint_lines,
+            "",
+            p,
+        ]
+    )
+    if state.input_rows:
+        try:
+            rows_text = json.dumps(state.input_rows, indent=2)
+        except TypeError:
+            rows_text = str(state.input_rows)
+        p += (
+            f"\n\nThe user provided {len(state.input_rows)} input row(s) (from CSV). "
+            "Ensure the final output covers these rows, preserves any existing values, and fills missing fields."
+            f"\n<input_rows>\n{rows_text}\n</input_rows>"
+        )
     last_message = state.messages[-1]
     if not isinstance(last_message, AIMessage):
         raise ValueError(
@@ -230,8 +305,60 @@ def route_after_checker(
     """
     configurable = Configuration.from_runnable_config(config)
     last_message = state.messages[-1]
+    info_cap_reached = state.info_call_count >= configurable.max_info_tool_calls
+    loop_cap_reached = state.loop_step >= configurable.max_loops
+    time_cap_reached = (time.monotonic() - state.start_time) >= configurable.max_time_seconds
+
+    if info_cap_reached and not state.info:
+        logger.info(
+            "route_after_checker: forcing wrap-up (info cap reached, no info yet)",
+            extra={
+                "topic": state.topic,
+                "loop_step": state.loop_step,
+                "info_calls": state.info_call_count,
+            },
+        )
+        return "call_agent_model"
+
+    if loop_cap_reached and not state.info:
+        logger.info(
+            "route_after_checker: forcing wrap-up (loop cap reached, no info yet)",
+            extra={"topic": state.topic, "loop_step": state.loop_step},
+        )
+        return "call_agent_model"
+
+    if time_cap_reached and not state.info:
+        logger.info(
+            "route_after_checker: forcing wrap-up (time cap reached, no info yet)",
+            extra={
+                "topic": state.topic,
+                "loop_step": state.loop_step,
+                "elapsed": time.monotonic() - state.start_time,
+            },
+        )
+        return "call_agent_model"
 
     if state.loop_step < configurable.max_loops:
+        if info_cap_reached and state.info:
+            logger.info(
+                "route_after_checker: ending (info cap reached, returning best-effort)",
+                extra={
+                    "topic": state.topic,
+                    "loop_step": state.loop_step,
+                    "info_calls": state.info_call_count,
+                },
+            )
+            return "__end__"
+        if time_cap_reached and state.info:
+            logger.info(
+                "route_after_checker: ending (time cap reached, returning best-effort)",
+                extra={
+                    "topic": state.topic,
+                    "loop_step": state.loop_step,
+                    "elapsed": time.monotonic() - state.start_time,
+                },
+            )
+            return "__end__"
         if not state.info:
             logger.debug(
                 "route_after_checker: continuing (no info)",

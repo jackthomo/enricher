@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
@@ -52,6 +53,9 @@ class ConfigurablePayload(BaseModel):
     max_loops: Optional[int] = Field(
         default=None, ge=1, description="Maximum loop iterations before stopping"
     )
+    max_time_seconds: Optional[int] = Field(
+        default=None, ge=1, description="Maximum wall-clock seconds before wrapping up"
+    )
 
 
 class EnrichmentRequest(BaseModel):
@@ -60,6 +64,10 @@ class EnrichmentRequest(BaseModel):
     topic: str = Field(..., description="Topic to research")
     extraction_schema: Dict[str, Any] = Field(
         ..., description="JSON schema describing the structured output"
+    )
+    input_rows: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Optional input rows (e.g., from CSV) that should be completed according to the schema",
     )
     configurable: Optional[ConfigurablePayload] = Field(
         default=None, description="Optional overrides for the graph configuration"
@@ -72,6 +80,7 @@ class EnrichmentResponse(BaseModel):
     info: Dict[str, Any]
     trace: list[Dict[str, Any]]
     steps: Optional[list[Dict[str, Any]]] = None
+    metrics: Optional[Dict[str, Any]] = None
 
 
 def _serialize_messages(messages: List[BaseMessage]) -> list[Dict[str, Any]]:
@@ -126,13 +135,18 @@ async def health() -> Dict[str, str]:
 @app.post("/enrich", response_model=EnrichmentResponse)
 async def run_enrichment(request: EnrichmentRequest) -> EnrichmentResponse:
     """Run the enrichment graph for a topic and schema."""
+    start_time = time.monotonic()
     config = {}
     if request.configurable:
         config["configurable"] = request.configurable.model_dump(exclude_none=True)
     try:
         logger.info("Enrichment request received", extra={"topic": request.topic})
         result, steps = await _invoke_with_steps(
-            {"topic": request.topic, "extraction_schema": request.extraction_schema},
+            {
+                "topic": request.topic,
+                "extraction_schema": request.extraction_schema,
+                "input_rows": request.input_rows,
+            },
             config=config or None,
         )
     except Exception as exc:  # pragma: no cover - runtime safeguard
@@ -154,4 +168,11 @@ async def run_enrichment(request: EnrichmentRequest) -> EnrichmentResponse:
             "trace_keys": list(info.keys()),
         },
     )
-    return EnrichmentResponse(info=info, trace=trace, steps=steps or None)
+    duration_ms = int((time.monotonic() - start_time) * 1000)
+    metrics = {"duration_ms": duration_ms}
+    # Token usage may be available in messages' response metadata; include if present.
+    usage = result.get("usage") or result.get("token_usage") or {}
+    for key in ("input_tokens", "output_tokens", "total_tokens"):
+        if key in usage:
+            metrics[key] = usage[key]
+    return EnrichmentResponse(info=info, trace=trace, steps=steps or None, metrics=metrics)

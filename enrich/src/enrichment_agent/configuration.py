@@ -51,6 +51,13 @@ class Configuration:
         },
     )
 
+    max_time_seconds: int = field(
+        default=120,
+        metadata={
+            "description": "Maximum wall-clock time (in seconds) to spend before wrapping up with best-effort output."
+        },
+    )
+
     @classmethod
     def from_runnable_config(
         cls, config: Optional[RunnableConfig] = None

@@ -5,6 +5,7 @@ data model used internally by the graph.
 """
 
 import operator
+import time
 from dataclasses import dataclass, field
 from typing import Annotated, Any, List, Optional
 
@@ -21,6 +22,9 @@ class InputState:
 
     extraction_schema: dict[str, Any]
     "The json schema defines the information the agent is tasked with filling out."
+
+    input_rows: Optional[list[dict[str, Any]]] = field(default=None)
+    "Optional seed rows (e.g., from CSV) the agent should complete according to the schema."
 
     info: Optional[dict[str, Any]] = field(default=None)
     "The info state tracks the current extracted data for the given topic, conforming to the provided schema. This is primarily populated by the agent."
@@ -67,6 +71,13 @@ class State(InputState):
         """
 
     loop_step: Annotated[int, operator.add] = field(default=0)
+    "How many agent loops have been executed."
+
+    info_call_count: Annotated[int, operator.add] = field(default=0)
+    "How many times the agent has attempted to call the Info tool."
+
+    start_time: float = field(default_factory=time.monotonic)
+    "Wall-clock start time (monotonic) used to enforce max runtime."
 
     # Feel free to add additional attributes to your state as needed.
     # Common examples include retrieved documents, extracted entities, API connections, etc.
