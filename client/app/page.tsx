@@ -285,7 +285,7 @@ const InfoTableView = ({ info }: { info: Record<string, unknown> }) => {
   return (
     <div className="space-y-4">
       {simpleEntries.length ? (
-        <div className="overflow-x-auto rounded-md border border-slate-800 bg-slate-950/40">
+        <div className="overflow-x-auto rounded-sm border border-slate-800 bg-slate-950/40">
           <table className="min-w-full text-left text-xs text-slate-100">
             <thead className="bg-slate-900/70 text-[11px] uppercase tracking-[0.1em] text-slate-400">
               <tr>
@@ -325,7 +325,7 @@ const InfoTableView = ({ info }: { info: Record<string, unknown> }) => {
               <div className="mb-1 text-sm font-semibold text-slate-100">
                 {key}
               </div>
-              <div className="overflow-x-auto rounded-md border border-slate-800 bg-slate-950/40">
+              <div className="overflow-x-auto rounded-sm border border-slate-800 bg-slate-950/40">
                 <table className="min-w-full text-left text-xs text-slate-100">
                   <thead className="bg-slate-900/70 text-[11px] uppercase tracking-[0.1em] text-slate-400">
                     <tr>
@@ -367,7 +367,7 @@ const InfoTableView = ({ info }: { info: Record<string, unknown> }) => {
             <div className="mb-1 text-sm font-semibold text-slate-100">
               {key}
             </div>
-            <div className="overflow-x-auto rounded-md border border-slate-800 bg-slate-950/40">
+            <div className="overflow-x-auto rounded-sm border border-slate-800 bg-slate-950/40">
               <table className="min-w-full text-left text-xs text-slate-100">
                 <thead className="bg-slate-900/70 text-[11px] uppercase tracking-[0.1em] text-slate-400">
                   <tr>
@@ -738,7 +738,7 @@ export default function Home() {
               </code>
             </span>
             <span
-              className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+              className={`inline-flex items-center gap-2 rounded-sm px-3 py-1 text-xs font-semibold ${
                 apiStatus === "ok"
                   ? "bg-emerald-100 text-emerald-800"
                   : apiStatus === "error"
@@ -747,7 +747,7 @@ export default function Home() {
               }`}
             >
               <span
-                className={`h-2 w-2 rounded-full ${
+                className={`h-2 w-2 rounded-sm ${
                   apiStatus === "ok"
                     ? "bg-emerald-500"
                     : apiStatus === "error"
@@ -765,7 +765,7 @@ export default function Home() {
               type="button"
               onClick={() => checkHealth()}
               disabled={isCheckingHealth}
-              className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-sm border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isCheckingHealth ? "Checking..." : "Check connection"}
             </button>
@@ -774,7 +774,7 @@ export default function Home() {
         </header>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <section className="space-y-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <section className="space-y-4 rounded-sm bg-white p-6 shadow-sm ring-1 ring-slate-200">
             <div className="space-y-2">
               <label className="text-sm font-semibold text-slate-800">
                 Topic
@@ -783,11 +783,11 @@ export default function Home() {
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="What should we research?"
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                className="w-full rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
               />
             </div>
 
-            <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <div className="space-y-3 rounded-sm border border-slate-100 bg-slate-50 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <p className="text-sm font-semibold text-slate-800">
@@ -801,14 +801,14 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={handleClearCsv}
-                    className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                    className="rounded-sm border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
                   >
                     Clear CSV
                   </button>
                 ) : null}
               </div>
               <div className="grid gap-4 md:grid-cols-2">
-                <label className="flex cursor-pointer flex-col gap-2 rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50">
+                <label className="flex cursor-pointer flex-col gap-2 rounded-sm border border-dashed border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50">
                   <input
                     type="file"
                     accept=".csv,text/csv"
@@ -831,7 +831,7 @@ export default function Home() {
                     min={1}
                     value={targetRowCount}
                     onChange={(e) => handleRowCountChange(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                    className="w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
                   />
                   <p className="text-xs text-slate-500">
                     Auto-filled from CSV. Otherwise use this to request a specific batch size (e.g. Top 5).
@@ -839,7 +839,7 @@ export default function Home() {
                 </div>
               </div>
               {csvError ? (
-                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                   {csvError}
                 </div>
               ) : null}
@@ -849,11 +849,11 @@ export default function Home() {
                     <span>
                       Previewing first {Math.min(5, inputRows.length)} of {inputRows.length} row(s)
                     </span>
-                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                    <span className="rounded-sm bg-emerald-100 px-2 py-1 text-[11px] font-semibold text-emerald-700">
                       Attached to request for gap-filling
                     </span>
                   </div>
-                  <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+                  <div className="overflow-x-auto rounded-sm border border-slate-200 bg-white">
                     <table className="min-w-full text-left text-xs text-slate-800">
                       <thead className="bg-slate-100 text-[11px] uppercase tracking-[0.1em] text-slate-500">
                         <tr>
@@ -894,7 +894,7 @@ export default function Home() {
               <p className="text-xs text-slate-500">
                 Upload a CSV to auto-infer columns, or build them directly. The JSON schema updates automatically.
               </p>
-              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <div className="overflow-x-auto rounded-sm border border-slate-200 bg-white">
                 <table className="min-w-[820px] text-left text-sm text-slate-800">
                   <thead className="bg-slate-100 text-[11px] uppercase tracking-[0.1em] text-slate-500">
                     <tr>
@@ -905,7 +905,7 @@ export default function Home() {
                             value={col.name}
                             onChange={(e) => handleColumnChange(col.id, "name", e.target.value)}
                             placeholder="column_name"
-                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400"
+                            className="w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 outline-none transition focus:border-slate-400"
                           />
                         </th>
                       ))}
@@ -923,7 +923,7 @@ export default function Home() {
                             onChange={(e) =>
                               handleColumnChange(col.id, "type", e.target.value as ColumnType)
                             }
-                            className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                            className="w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
                           >
                             <option value="string">string</option>
                             <option value="number">number</option>
@@ -943,7 +943,7 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={() => handleColumnChange(col.id, "required", !col.required)}
-                            className={`w-full rounded-full px-3 py-2 text-[12px] font-semibold transition ${
+                            className={`w-full rounded-sm px-3 py-2 text-[12px] font-semibold transition ${
                               col.required
                                 ? "bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200"
                                 : "bg-slate-200 text-slate-700 ring-1 ring-slate-300 hover:bg-slate-300"
@@ -965,7 +965,7 @@ export default function Home() {
                             onChange={(e) => handleColumnChange(col.id, "description", e.target.value)}
                             rows={2}
                             placeholder="What should the model provide?"
-                            className="w-full resize-none rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                            className="w-full resize-none rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
                           />
                         </td>
                       ))}
@@ -980,7 +980,7 @@ export default function Home() {
                             type="button"
                             onClick={() => handleRemoveColumn(col.id)}
                             disabled={columns.length <= 1}
-                            className="w-full rounded-full border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="w-full rounded-sm border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             Remove
                           </button>
@@ -994,7 +994,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={handleAddColumn}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
+                  className="inline-flex items-center gap-2 rounded-sm border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
                 >
                   + Add column
                 </button>
@@ -1003,19 +1003,19 @@ export default function Home() {
                 </p>
               </div>
             </div>
-            <details className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <details className="rounded-sm border border-slate-100 bg-slate-50 p-3">
               <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-800">
                 <span>Generated schema (optional view)</span>
                 <span className="text-[11px] text-slate-500">Click to expand</span>
               </summary>
               <div className="mt-3 space-y-3">
-                <div className="max-h-[280px] overflow-auto rounded-md border border-slate-200 bg-white">
+                <div className="max-h-[280px] overflow-auto rounded-sm border border-slate-200 bg-white">
                   <pre className="whitespace-pre px-3 py-2 font-mono text-xs text-slate-800">
                     {schemaText}
                   </pre>
                 </div>
                 {schemaFieldRows.length ? (
-                  <div className="overflow-x-auto rounded-md border border-slate-200 bg-white">
+                  <div className="overflow-x-auto rounded-sm border border-slate-200 bg-white">
                     <table className="min-w-full text-left text-xs text-slate-800">
                       <thead className="bg-slate-100 text-[11px] uppercase tracking-[0.1em] text-slate-500">
                         <tr>
@@ -1037,7 +1037,7 @@ export default function Home() {
                             <td className="px-3 py-2">{row.type}</td>
                             <td className="px-3 py-2">
                               <span
-                                className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${
+                                className={`inline-flex rounded-sm px-2 py-1 text-[11px] font-semibold ${
                                   row.required
                                     ? "bg-emerald-100 text-emerald-700"
                                     : "bg-slate-200 text-slate-700"
@@ -1077,7 +1077,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setShowConfigModal(true)}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
+                className="inline-flex items-center gap-2 rounded-sm border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
               >
                 Open settings
               </button>
@@ -1092,14 +1092,14 @@ export default function Home() {
                   type="button"
                   onClick={handleCancel}
                   disabled={!isLoading}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center gap-2 rounded-sm border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Pause/Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={isLoading}
-                  className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  className="inline-flex items-center gap-2 rounded-sm bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
                 >
                   {isLoading ? "Running..." : "Run enrichment"}
                 </button>
@@ -1107,13 +1107,13 @@ export default function Home() {
             </div>
 
             {error ? (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 {error}
               </div>
             ) : null}
           </section>
 
-          <section className="flex h-full flex-col gap-3 rounded-2xl bg-slate-900 p-6 text-slate-50 shadow-md">
+          <section className="flex h-full flex-col gap-3 rounded-sm bg-slate-900 p-6 text-slate-50 shadow-md">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs uppercase tracking-[0.25em] text-slate-400">
@@ -1124,27 +1124,27 @@ export default function Home() {
               {metrics ? (
                 <div className="flex flex-wrap items-center gap-2 text-[11px]">
                   {metrics.duration_ms !== undefined ? (
-                    <span className="rounded-full bg-slate-800 px-2 py-1 text-slate-100">
+                    <span className="rounded-sm bg-slate-800 px-2 py-1 text-slate-100">
                       Time: {(metrics.duration_ms / 1000).toFixed(1)}s
                     </span>
                   ) : null}
                   {metrics.total_tokens !== undefined ? (
-                    <span className="rounded-full bg-slate-800 px-2 py-1 text-slate-100">
+                    <span className="rounded-sm bg-slate-800 px-2 py-1 text-slate-100">
                       Tokens: {metrics.total_tokens} (in {metrics.input_tokens ?? "?"} / out {metrics.output_tokens ?? "?"})
                     </span>
                   ) : null}
                 </div>
               ) : null}
-              <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-100">
+              <span className="rounded-sm bg-emerald-500/20 px-3 py-1 text-xs font-semibold text-emerald-100">
                 Live
               </span>
             </div>
-            <div className="min-h-[320px] rounded-xl bg-slate-950/50 p-4 text-slate-100 ring-1 ring-slate-700">
+            <div className="min-h-[320px] rounded-sm bg-slate-950/50 p-4 text-slate-100 ring-1 ring-slate-700">
               <div className="mb-3 flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setResultView("table")}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  className={`rounded-sm px-3 py-1 text-xs font-semibold transition ${
                     resultView === "table"
                       ? "bg-white text-slate-900"
                       : "bg-slate-800 text-slate-200 hover:bg-slate-700"
@@ -1155,7 +1155,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setResultView("json")}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                  className={`rounded-sm px-3 py-1 text-xs font-semibold transition ${
                     resultView === "json"
                       ? "bg-white text-slate-900"
                       : "bg-slate-800 text-slate-200 hover:bg-slate-700"
@@ -1183,14 +1183,14 @@ export default function Home() {
                 )}
               </div>
             </div>
-            <div className="rounded-xl bg-slate-950/30 p-4 text-slate-100 ring-1 ring-slate-700">
+            <div className="rounded-sm bg-slate-950/30 p-4 text-slate-100 ring-1 ring-slate-700">
               <details open={showTrace} className="group">
                 <summary
                   onClick={() => setShowTrace((prev) => !prev)}
                   className="flex cursor-pointer items-center justify-between text-xs font-semibold uppercase tracking-[0.2em] text-slate-400"
                 >
                   <span>Trace</span>
-                  <span className="rounded-full bg-slate-800 px-2 py-1 text-[10px] text-slate-200">
+                  <span className="rounded-sm bg-slate-800 px-2 py-1 text-[10px] text-slate-200">
                     {trace.length} steps
                   </span>
                 </summary>
@@ -1215,12 +1215,12 @@ export default function Home() {
                       return (
                         <div
                           key={`${msg.type}-${idx}`}
-                          className="rounded-lg bg-slate-900/60 p-3 ring-1 ring-slate-800"
+                          className="rounded-sm bg-slate-900/60 p-3 ring-1 ring-slate-800"
                         >
                           <div className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-[0.1em] text-slate-300">
                             <span>{msg.type}</span>
                             {msg.data?.name ? (
-                              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] text-slate-200">
+                              <span className="rounded-sm bg-slate-800 px-2 py-0.5 text-[10px] text-slate-200">
                                 {msg.data.name}
                               </span>
                             ) : null}
@@ -1273,7 +1273,7 @@ export default function Home() {
               onClick={() => setShowConfigModal(false)}
               aria-label="Close settings"
             />
-            <div className="relative z-10 w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl ring-1 ring-slate-200">
+            <div className="relative z-10 w-full max-w-3xl rounded-sm bg-white p-6 shadow-2xl ring-1 ring-slate-200">
               <div className="mb-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-500">
@@ -1286,7 +1286,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setShowConfigModal(false)}
-                  className="rounded-full border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
+                  className="rounded-sm border border-slate-200 px-3 py-1 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50"
                 >
                   Close
                 </button>
@@ -1302,7 +1302,7 @@ export default function Home() {
                       setConfig((prev) => ({ ...prev, model: e.target.value }))
                     }
                     placeholder="anthropic/claude-3-5-sonnet-20240620"
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                    className="w-full rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
                   />
                 </div>
                 <div className="space-y-2">
@@ -1323,7 +1323,7 @@ export default function Home() {
                       }))
                     }
                     placeholder="5"
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                    className="w-full rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
                   />
                 </div>
                 <div className="space-y-2">
@@ -1344,7 +1344,7 @@ export default function Home() {
                       }))
                     }
                     placeholder="3"
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                    className="w-full rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
                   />
                 </div>
                 <div className="space-y-2">
@@ -1365,7 +1365,7 @@ export default function Home() {
                       }))
                     }
                     placeholder="6"
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                    className="w-full rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
                   />
                 </div>
                 <div className="space-y-2">
@@ -1386,7 +1386,7 @@ export default function Home() {
                       }))
                     }
                     placeholder="120"
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                    className="w-full rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
                   />
                 </div>
               </div>
@@ -1401,7 +1401,7 @@ export default function Home() {
                   }
                   rows={4}
                   placeholder="Custom prompt with {info} and {topic}"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
+                  className="w-full rounded-sm border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400 focus:bg-white"
                 />
               </div>
             </div>
