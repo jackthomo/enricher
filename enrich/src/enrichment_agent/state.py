@@ -26,6 +26,9 @@ class InputState:
     input_rows: Optional[list[dict[str, Any]]] = field(default=None)
     "Optional seed rows (e.g., from CSV) the agent should complete according to the schema."
 
+    example_rows: Optional[list[dict[str, Any]]] = field(default=None)
+    "Optional few-shot examples to show the desired row format and tone."
+
     info: Optional[dict[str, Any]] = field(default=None)
     "The info state tracks the current extracted data for the given topic, conforming to the provided schema. This is primarily populated by the agent."
 

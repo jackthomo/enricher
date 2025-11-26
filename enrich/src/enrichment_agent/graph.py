@@ -80,6 +80,17 @@ async def call_agent_model(
             "Do not add or remove rows unless explicitly asked."
             f"\n<input_rows>\n{rows_text}\n</input_rows>"
         )
+    if state.example_rows:
+        try:
+            examples_text = json.dumps(state.example_rows, indent=2)
+        except TypeError:
+            examples_text = str(state.example_rows)
+        p += (
+            f"\n\nThe user also shared {len(state.example_rows)} example row(s). "
+            "Treat these as few-shot examples that show the desired style and structure. "
+            "Mirror their formatting, but generate new rows for this topic unless an example represents a real row to include."
+            f"\n<example_rows>\n{examples_text}\n</example_rows>"
+        )
     wrap_up_notes: list[str] = []
     if state.info_call_count >= configuration.max_info_tool_calls:
         wrap_up_notes.append(
@@ -206,6 +217,16 @@ async def reflect(
             f"\n\nThe user provided {len(state.input_rows)} input row(s) (from CSV). "
             "Ensure the final output covers these rows, preserves any existing values, and fills missing fields."
             f"\n<input_rows>\n{rows_text}\n</input_rows>"
+        )
+    if state.example_rows:
+        try:
+            examples_text = json.dumps(state.example_rows, indent=2)
+        except TypeError:
+            examples_text = str(state.example_rows)
+        p += (
+            f"\n\nThe user also shared {len(state.example_rows)} example row(s) for guidance. "
+            "Follow their tone and structure as exemplars without assuming they are part of the final batch unless they match the topic."
+            f"\n<example_rows>\n{examples_text}\n</example_rows>"
         )
     last_message = state.messages[-1]
     if not isinstance(last_message, AIMessage):

@@ -65,6 +65,10 @@ class EnrichmentRequest(BaseModel):
     extraction_schema: Dict[str, Any] = Field(
         ..., description="JSON schema describing the structured output"
     )
+    example_rows: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Optional few-shot example rows to illustrate the expected format. These guide the model but are not treated as the target batch.",
+    )
     input_rows: Optional[List[Dict[str, Any]]] = Field(
         default=None,
         description="Optional input rows (e.g., from CSV) that should be completed according to the schema",
@@ -145,6 +149,7 @@ async def run_enrichment(request: EnrichmentRequest) -> EnrichmentResponse:
             {
                 "topic": request.topic,
                 "extraction_schema": request.extraction_schema,
+                "example_rows": request.example_rows,
                 "input_rows": request.input_rows,
             },
             config=config or None,

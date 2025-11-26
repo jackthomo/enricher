@@ -121,6 +121,9 @@ const createColumn = (
   type: options?.type ?? "string",
 });
 
+const getColumnKey = (col: ColumnSpec, idx: number) =>
+  col.name.trim() || `column_${idx + 1}`;
+
 const DEFAULT_COLUMNS: ColumnSpec[] = [
   createColumn("name", "Company name"),
   createColumn("technology_summary", "Brief summary of chip technology for LLM training"),
@@ -196,6 +199,43 @@ const parseCsvText = (text: string): ParsedCsv => {
     .filter((row) => Object.values(row).some((value) => value.trim().length > 0));
 
   return { headers, rows };
+};
+
+const renameRowKey = (
+  rows: Record<string, string>[],
+  fromKey: string,
+  toKey: string
+) =>
+  rows.map((row) => {
+    if (!(fromKey in row)) return row;
+    const { [fromKey]: existing, ...rest } = row;
+    return { ...rest, [toKey]: existing };
+  });
+
+const exampleValueForColumn = (col: ColumnSpec, rowIndex: number): string => {
+  const name = col.name.trim().toLowerCase();
+  if (name.includes("name")) return rowIndex === 0 ? "Atlas Silicon" : `Provider ${rowIndex + 1}`;
+  if (name.includes("summary") || name.includes("description")) {
+    return "Concise one-liner describing the provider's focus and technology.";
+  }
+  if (name.includes("share") || name.includes("market")) return "18%";
+  if (name.includes("outlook") || name.includes("trend")) {
+    return "Stable near-term demand; upside from AI training build-outs.";
+  }
+  if (col.type === "number") return "42";
+  if (col.type === "boolean") return "true";
+  if (col.type === "array") return '["item 1", "item 2"]';
+  if (col.type === "object") return '{"key": "value"}';
+  return `Example ${col.name || "value"}`;
+};
+
+const buildExampleRowTemplate = (cols: ColumnSpec[], rowIndex = 0): Record<string, string> => {
+  const row: Record<string, string> = {};
+  cols.forEach((col, idx) => {
+    const key = getColumnKey(col, idx);
+    row[key] = exampleValueForColumn(col, rowIndex);
+  });
+  return row;
 };
 
 const inferColumnTypeFromValues = (values: string[]): ColumnType => {
@@ -404,6 +444,9 @@ export default function Home() {
     "Top 5 chip providers for LLM training and their market outlook"
   );
   const [columns, setColumns] = useState<ColumnSpec[]>(DEFAULT_COLUMNS);
+  const [exampleRows, setExampleRows] = useState<Record<string, string>[]>(() => [
+    buildExampleRowTemplate(DEFAULT_COLUMNS),
+  ]);
   const [inputRows, setInputRows] = useState<Record<string, string>[]>([]);
   const [csvMeta, setCsvMeta] = useState<{
     fileName: string;
@@ -447,16 +490,17 @@ export default function Home() {
     key: "name" | "type" | "description" | "required",
     value: string | boolean
   ) => {
-    if (key === "name" && typeof value === "string" && inputRows.length) {
+    if (key === "name" && typeof value === "string" && (inputRows.length || exampleRows.length)) {
       const current = columns.find((col) => col.id === id);
-      if (current?.name && current.name !== value) {
-        setInputRows((prevRows) =>
-          prevRows.map((row) => {
-            if (!(current.name in row)) return row;
-            const { [current.name]: existing, ...rest } = row;
-            return { ...rest, [value]: existing };
-          })
-        );
+      const previousKey = current?.name.trim();
+      const nextKey = value.trim();
+      if (previousKey && nextKey && previousKey !== nextKey) {
+        if (inputRows.length) {
+          setInputRows((prevRows) => renameRowKey(prevRows, previousKey, nextKey));
+        }
+        if (exampleRows.length) {
+          setExampleRows((prevRows) => renameRowKey(prevRows, previousKey, nextKey));
+        }
       }
     }
     setColumns((prev) =>
@@ -465,7 +509,30 @@ export default function Home() {
   };
 
   const handleRemoveColumn = (id: string) => {
+    const toRemove = columns.find((col) => col.id === id);
+    if (columns.length <= 1) return;
     setColumns((prev) => (prev.length <= 1 ? prev : prev.filter((col) => col.id !== id)));
+    const keyToDrop = toRemove?.name.trim();
+    if (keyToDrop) {
+      if (inputRows.length) {
+        setInputRows((prevRows) =>
+          prevRows.map((row) => {
+            if (!(keyToDrop in row)) return row;
+            const { [keyToDrop]: _, ...rest } = row;
+            return rest;
+          })
+        );
+      }
+      if (exampleRows.length) {
+        setExampleRows((prevRows) =>
+          prevRows.map((row) => {
+            if (!(keyToDrop in row)) return row;
+            const { [keyToDrop]: _, ...rest } = row;
+            return rest;
+          })
+        );
+      }
+    }
   };
 
   const handleAddColumn = () => {
@@ -479,10 +546,27 @@ export default function Home() {
     ]);
   };
 
+  const handleAddExampleRow = () => {
+    setExampleRows((prev) => [...prev, buildExampleRowTemplate(columns, prev.length)]);
+  };
+
+  const handleExampleValueChange = (rowIndex: number, key: string, value: string) => {
+    setExampleRows((prevRows) =>
+      prevRows.map((row, idx) => (idx === rowIndex ? { ...row, [key]: value } : row))
+    );
+  };
+
+  const handleRemoveExampleRow = (rowIndex: number) => {
+    setExampleRows((prevRows) => prevRows.filter((_, idx) => idx !== rowIndex));
+  };
+
+  const handleClearExamples = () => setExampleRows([]);
+
   const applyCsvToState = (parsed: ParsedCsv, fileName: string) => {
     const inferredColumns = buildColumnsFromCsv(parsed);
     setColumns(inferredColumns);
     setInputRows(parsed.rows);
+    setExampleRows([buildExampleRowTemplate(inferredColumns)]);
     setCsvMeta({
       fileName,
       rowCount: parsed.rows.length,
@@ -572,6 +656,7 @@ export default function Home() {
       topic: string;
       extraction_schema: Record<string, unknown>;
       configurable?: Configurable;
+      example_rows?: Record<string, string>[];
       input_rows?: Record<string, string>[];
     } = {
       topic: topicForRequest,
@@ -582,6 +667,9 @@ export default function Home() {
     }
     if (inputRows.length) {
       payload.input_rows = inputRows;
+    }
+    if (exampleRows.length) {
+      payload.example_rows = exampleRows;
     }
 
     setIsLoading(true);
@@ -659,7 +747,7 @@ export default function Home() {
     const properties: Record<string, JsonSchema> = {};
     const required: string[] = [];
     columns.forEach((col, idx) => {
-      const key = col.name.trim() || `column_${idx + 1}`;
+      const key = getColumnKey(col, idx);
       properties[key] = {
         type: col.type,
         description: col.description || undefined,
@@ -685,6 +773,9 @@ export default function Home() {
               : typeof targetRowCount === "number" && targetRowCount > 0
                 ? `Return about ${targetRowCount} row(s) in this array.`
                 : null,
+            exampleRows.length
+              ? `User also provided ${exampleRows.length} example row(s) as few-shot guidance. Mirror their shape and tone but do not treat them as the target batch unless they reflect real rows.`
+              : null,
           ]
             .filter(Boolean)
             .join(" "),
@@ -697,7 +788,7 @@ export default function Home() {
       required: ["providers", "summary"],
     };
     return schema;
-  }, [columns, inputRows.length, targetRowCount]);
+  }, [columns, exampleRows.length, inputRows.length, targetRowCount]);
 
   const schemaText = useMemo(
     () => JSON.stringify(extractionSchema, null, 2),
@@ -1002,6 +1093,94 @@ export default function Home() {
                   Tables scroll horizontally on smaller screens.
                 </p>
               </div>
+            </div>
+            <div className="space-y-3 rounded-sm border border-slate-100 bg-slate-50 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    Example rows (few-shot, optional)
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Send one or more template rows so the model can mirror the desired structure and tone. These act as examples, not as the batch to enrich.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {exampleRows.length ? (
+                    <button
+                      type="button"
+                      onClick={handleClearExamples}
+                      className="rounded-sm border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                    >
+                      Clear examples
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={handleAddExampleRow}
+                    className="inline-flex items-center gap-2 rounded-sm border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50"
+                  >
+                    + Add template row
+                  </button>
+                </div>
+              </div>
+              {exampleRows.length ? (
+                <div className="overflow-x-auto rounded-sm border border-slate-200 bg-white">
+                  <table className="min-w-[820px] text-left text-xs text-slate-800">
+                    <thead className="bg-slate-100 text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2 w-[140px]">Example</th>
+                        {columns.map((col) => (
+                          <th key={`${col.id}-example-header`} className="px-3 py-2">
+                            {col.name || "column"}
+                          </th>
+                        ))}
+                        <th className="px-3 py-2 w-[110px]">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exampleRows.map((row, rowIdx) => (
+                        <tr
+                          key={`example-row-${rowIdx}`}
+                          className="odd:bg-slate-50 even:bg-white align-top"
+                        >
+                          <td className="px-3 py-2 font-semibold text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                            Example {rowIdx + 1}
+                          </td>
+                          {columns.map((col, colIdx) => {
+                            const key = getColumnKey(col, colIdx);
+                            return (
+                              <td key={`${col.id}-example-${rowIdx}`} className="px-3 py-2">
+                                <textarea
+                                  value={row[key] ?? ""}
+                                  onChange={(e) =>
+                                    handleExampleValueChange(rowIdx, key, e.target.value)
+                                  }
+                                  rows={2}
+                                  placeholder={`Example for ${key}`}
+                                  className="w-full resize-none rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                                />
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveExampleRow(rowIdx)}
+                              className="w-full rounded-sm border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Add one or more examples to show the model exactly how a completed row should look.
+                </p>
+              )}
             </div>
             <details className="rounded-sm border border-slate-100 bg-slate-50 p-3">
               <summary className="flex cursor-pointer items-center justify-between text-sm font-semibold text-slate-800">
