@@ -32,6 +32,12 @@ class InputState:
     info: Optional[dict[str, Any]] = field(default=None)
     "The info state tracks the current extracted data for the given topic, conforming to the provided schema. This is primarily populated by the agent."
 
+    plan: Optional[dict[str, Any]] = field(default=None)
+    "Optional research plan generated before execution. Captures per-field queries/domains and difficulty."
+
+    evidence: Optional[dict[str, Any]] = field(default=None)
+    "Optional evidence/confidence metadata keyed by row/field, produced after the agent finishes."
+
 
 @dataclass(kw_only=True)
 class State(InputState):
@@ -85,6 +91,9 @@ class State(InputState):
     # Feel free to add additional attributes to your state as needed.
     # Common examples include retrieved documents, extracted entities, API connections, etc.
 
+    evidence_log: list[dict[str, Any]] = field(default_factory=list)
+    "Lightweight log of retrieval outputs (search results, scraped snippets) to inform downstream evidence attribution."
+
 
 @dataclass(kw_only=True)
 class OutputState:
@@ -103,3 +112,9 @@ class OutputState:
 
     messages: List[BaseMessage] = field(default_factory=list)
     """Full message history so the UI can render the agentic trace."""
+
+    evidence: Optional[dict[str, Any]] = None
+    """Evidence/confidence metadata keyed by row/field."""
+
+    plan: Optional[dict[str, Any]] = None
+    """Returned plan so the client can display or debug the pre-run strategy."""

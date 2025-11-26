@@ -18,11 +18,114 @@ from enrichment_agent import prompts
 from enrichment_agent.configuration import Configuration
 from enrichment_agent.state import InputState, OutputState, State
 from enrichment_agent.tools import scrape_website, search
-from enrichment_agent.utils import init_model
+from enrichment_agent.utils import get_message_text, init_model
 
 
 logger = logging.getLogger(__name__)
 
+
+class ColumnPlan(BaseModel):
+    """Plan for a single column/attribute."""
+
+    column: str = Field(description="Column/property name to fill.")
+    difficulty: Literal["easy", "medium", "hard"] = Field(
+        description="Estimated difficulty to retrieve confidently."
+    )
+    queries: List[str] = Field(
+        description="Ordered search queries to try for this column.", min_length=1
+    )
+    preferred_domains: List[str] = Field(
+        default_factory=list,
+        description="Preferred domains to source from (ranked).",
+    )
+    notes: Optional[str] = Field(
+        default=None, description="Short strategy note for this column."
+    )
+
+
+class PlanOutput(BaseModel):
+    """Planner output summarizing the harvesting strategy."""
+
+    summary: str = Field(description="Overall harvesting approach in <=3 sentences.")
+    columns: List[ColumnPlan] = Field(
+        default_factory=list,
+        description="Per-column retrieval plan ordered by priority.",
+    )
+    max_tool_calls: Optional[int] = Field(
+        default=None,
+        description="Optional budget for total tool calls to avoid brute-force usage.",
+    )
+
+
+class SourceEvidence(BaseModel):
+    """Reference to a snippet or URL used for a value."""
+
+    url: Optional[str] = Field(default=None, description="URL of the source, if known.")
+    snippet: Optional[str] = Field(
+        default=None, description="Short supporting snippet (<=320 chars)."
+    )
+
+
+class CellEvidence(BaseModel):
+    """Confidence and supporting sources for a cell."""
+
+    confidence: Literal["low", "medium", "high"] = Field(
+        description="Qualitative confidence based on sources and difficulty."
+    )
+    sources: List[SourceEvidence] = Field(
+        default_factory=list, description="Supporting evidence for this value."
+    )
+
+
+class EvidenceOutput(BaseModel):
+    """Evidence payload keyed by row and column."""
+
+    rows: Dict[str, Dict[str, CellEvidence]] = Field(
+        description="Mapping: row_id -> column -> evidence"
+    )
+
+
+async def plan_research(
+    state: State, *, config: Optional[RunnableConfig] = None
+) -> Dict[str, Any]:
+    """
+    Generate a lightweight research plan before the main agent runs.
+
+    Uses the configured model (can be a small/cheap one) to propose per-column
+    queries, preferred domains, difficulty, and tool budget hints.
+    """
+    configuration = Configuration.from_runnable_config(config)
+    # Use the configured model; could later be overridden for cheaper planning.
+    raw_model = init_model(config)
+    column_names: List[str] = []
+    schema_props = (state.extraction_schema or {}).get("properties", {})
+    if isinstance(schema_props, dict):
+        column_names = list(schema_props.keys())
+    plan_prompt = f"""You are planning web research before execution.
+Topic: {state.topic}
+Columns to fill: {', '.join(column_names) or 'unknown/unspecified'}
+Input rows provided: {len(state.input_rows or [])}
+
+Create a concise plan:
+- Mark each column difficulty: easy/medium/hard.
+- Provide 1-3 prioritized search queries per column and preferred domains.
+- Avoid brute-force; keep tool calls lean. If sensible, set a max tool call budget.
+Respond via structured output."""
+    bound = raw_model.with_structured_output(PlanOutput)
+    logger.info(
+        "plan_research: creating plan",
+        extra={"topic": state.topic, "model": configuration.model},
+    )
+    plan = await bound.ainvoke(plan_prompt)
+    logger.info(
+        "plan_research: plan ready",
+        extra={
+            "topic": state.topic,
+            "columns": [c.column for c in plan.columns],
+            "max_tool_calls": plan.max_tool_calls,
+        },
+    )
+    return {"plan": plan.model_dump()}
 
 async def call_agent_model(
     state: State, *, config: Optional[RunnableConfig] = None
@@ -61,11 +164,18 @@ async def call_agent_model(
         f"Search results per query are capped at {configuration.max_search_results}. Minimize tool calls; prefer reusing gathered info.",
         "If remaining loops or time are low, prioritize calling the Info tool with best-effort output instead of additional searches.",
     ]
+    plan_section: list[str] = []
+    if state.plan:
+        plan_section = ["PLAN:", json.dumps(state.plan, indent=2), ""]
+        constraint_lines.append(
+            "Follow the pre-run plan; avoid off-plan brute force unless evidence is weak."
+        )
     p = "\n".join(
         [
             "RUN CONSTRAINTS:",
             *constraint_lines,
             "",
+            *plan_section,
             p,
         ]
     )
@@ -290,6 +400,74 @@ If you don't think it is good, you should be very specific about what could be i
         }
 
 
+def _normalize_info_rows(info: Any) -> List[Any]:
+    """Normalize info into a list of row-like entries."""
+    if info is None:
+        return []
+    if isinstance(info, list):
+        return info
+    if isinstance(info, dict):
+        return [info]
+    return [{"value": info}]
+
+
+async def attribute_evidence(
+    state: State, *, config: Optional[RunnableConfig] = None
+) -> Dict[str, Any]:
+    """
+    Attribute evidence and confidence to each output cell post-run.
+
+    Uses prior tool messages and the final info to generate a sidecar evidence
+    structure that the API/UI can expose without changing the main output schema.
+    """
+    raw_model = init_model(config)
+    info_rows = _normalize_info_rows(state.info)
+    row_ids = [f"row_{idx}" for idx in range(len(info_rows))] or ["row_0"]
+    tool_texts: List[str] = []
+    for msg in state.messages:
+        if isinstance(msg, ToolMessage):
+            txt = get_message_text(msg)
+            if txt:
+                tool_texts.append(txt.strip())
+    # Limit context length to keep the prompt cheap and safe.
+    joined_tools = "\n---\n".join(tool_texts)[:12_000]
+    difficulty_hints: Dict[str, str] = {}
+    if state.plan:
+        for col in state.plan.get("columns", []):
+            col_name = col.get("column")
+            if col_name:
+                difficulty_hints[col_name] = col.get("difficulty", "medium")
+    evidence_prompt = f"""You are assigning confidence and evidence to extracted data.
+Topic: {state.topic}
+Row IDs: {', '.join(row_ids)}
+Difficulty hints by column (if any): {json.dumps(difficulty_hints)}
+
+Final info (rows in order):
+{json.dumps(info_rows, indent=2)}
+
+Tool outputs (search results, scrape summaries, etc.):
+{joined_tools}
+
+Rules:
+- For each row_i and each column present in that row, output a confidence of low/medium/high.
+- Base confidence on number of distinct sources: 1 weak -> low; 1 strong or 2 mixed -> medium; 2-3 strong -> high. For hard columns, require more support for high.
+- Provide up to 3 sources per cell with url and <=240-char snippet. If no evidence, leave sources empty and set confidence to low.
+- Do NOT alter the info values; only produce evidence metadata.
+
+Return JSON matching the schema."""
+    bound = raw_model.with_structured_output(EvidenceOutput)
+    logger.info(
+        "attribute_evidence: attributing evidence",
+        extra={"topic": state.topic, "rows": len(info_rows)},
+    )
+    evidence = await bound.ainvoke(evidence_prompt)
+    logger.info(
+        "attribute_evidence: evidence ready",
+        extra={"topic": state.topic, "rows": len(evidence.rows)},
+    )
+    return {"evidence": evidence.model_dump()}
+
+
 def route_after_agent(
     state: State,
 ) -> Literal["reflect", "tools", "call_agent_model", "__end__"]:
@@ -318,7 +496,7 @@ def route_after_agent(
 
 def route_after_checker(
     state: State, config: RunnableConfig
-) -> Literal["__end__", "call_agent_model"]:
+) -> Literal["attribute_evidence", "__end__", "call_agent_model"]:
     """Schedule the next node after the checker's evaluation.
 
     This function determines whether to continue the research process or end it
@@ -369,7 +547,7 @@ def route_after_checker(
                     "info_calls": state.info_call_count,
                 },
             )
-            return "__end__"
+            return "attribute_evidence"
         if time_cap_reached and state.info:
             logger.info(
                 "route_after_checker: ending (time cap reached, returning best-effort)",
@@ -379,7 +557,7 @@ def route_after_checker(
                     "elapsed": time.monotonic() - state.start_time,
                 },
             )
-            return "__end__"
+            return "attribute_evidence"
         if not state.info:
             logger.debug(
                 "route_after_checker: continuing (no info)",
@@ -402,26 +580,31 @@ def route_after_checker(
             "route_after_checker: ending (satisfactory)",
             extra={"topic": state.topic, "loop_step": state.loop_step},
         )
-        return "__end__"
+        return "attribute_evidence"
     else:
         logger.info(
             "route_after_checker: ending (max loops reached)",
             extra={"topic": state.topic, "loop_step": state.loop_step},
         )
-        return "__end__"
+        # If we are at max loops without info, end; otherwise attribute evidence.
+        return "attribute_evidence" if state.info else "__end__"
 
 
 # Create the graph
 workflow = StateGraph(
     State, input_schema=InputState, output_schema=OutputState, context_schema=Configuration
 )
+workflow.add_node(plan_research)
 workflow.add_node(call_agent_model)
 workflow.add_node(reflect)
+workflow.add_node(attribute_evidence)
 workflow.add_node("tools", ToolNode([search, scrape_website]))
-workflow.add_edge("__start__", "call_agent_model")
+workflow.add_edge("__start__", "plan_research")
+workflow.add_edge("plan_research", "call_agent_model")
 workflow.add_conditional_edges("call_agent_model", route_after_agent)
 workflow.add_edge("tools", "call_agent_model")
 workflow.add_conditional_edges("reflect", route_after_checker)
+workflow.add_edge("attribute_evidence", "__end__")
 
 graph = workflow.compile()
 graph.name = "ResearchTopic"

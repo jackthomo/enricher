@@ -55,6 +55,7 @@ type JsonSchema = {
   properties?: Record<string, JsonSchema>;
   items?: JsonSchema;
   required?: string[];
+  multipleOf?: number;
 };
 
 type SchemaFieldRow = {
@@ -72,7 +73,17 @@ type ColumnSpec = {
   type: ColumnType;
   description: string;
   required: boolean;
+  decimalPlaces?: number;
+  unit?: string;
 };
+
+type EditableColumnKey =
+  | "name"
+  | "type"
+  | "description"
+  | "required"
+  | "decimalPlaces"
+  | "unit";
 
 type CsvHeader = {
   key: string;
@@ -119,6 +130,8 @@ const createColumn = (
   description,
   required: options?.required ?? true,
   type: options?.type ?? "string",
+  decimalPlaces: undefined,
+  unit: "",
 });
 
 const getColumnKey = (col: ColumnSpec, idx: number) =>
@@ -222,7 +235,12 @@ const exampleValueForColumn = (col: ColumnSpec, rowIndex: number): string => {
   if (name.includes("outlook") || name.includes("trend")) {
     return "Stable near-term demand; upside from AI training build-outs.";
   }
-  if (col.type === "number") return "42";
+  if (col.type === "number") {
+    if (typeof col.decimalPlaces === "number") {
+      return Number(42).toFixed(col.decimalPlaces);
+    }
+    return "42";
+  }
   if (col.type === "boolean") return "true";
   if (col.type === "array") return '["item 1", "item 2"]';
   if (col.type === "object") return '{"key": "value"}';
@@ -487,8 +505,8 @@ export default function Home() {
 
   const handleColumnChange = (
     id: string,
-    key: "name" | "type" | "description" | "required",
-    value: string | boolean
+    key: EditableColumnKey,
+    value: ColumnSpec[EditableColumnKey]
   ) => {
     if (key === "name" && typeof value === "string" && (inputRows.length || exampleRows.length)) {
       const current = columns.find((col) => col.id === id);
@@ -506,6 +524,17 @@ export default function Home() {
     setColumns((prev) =>
       prev.map((col) => (col.id === id ? { ...col, [key]: value } : col))
     );
+  };
+
+  const handleDecimalPlacesChange = (id: string, rawValue: string) => {
+    if (rawValue === "") {
+      handleColumnChange(id, "decimalPlaces", undefined);
+      return;
+    }
+    const parsed = Number(rawValue);
+    if (Number.isNaN(parsed) || parsed < 0) return;
+    const normalized = Math.max(0, Math.round(parsed));
+    handleColumnChange(id, "decimalPlaces", normalized);
   };
 
   const handleRemoveColumn = (id: string) => {
@@ -748,10 +777,36 @@ export default function Home() {
     const required: string[] = [];
     columns.forEach((col, idx) => {
       const key = getColumnKey(col, idx);
-      properties[key] = {
+      const descriptionParts: string[] = [];
+      if (col.description) {
+        descriptionParts.push(col.description);
+      }
+
+      const property: JsonSchema = {
         type: col.type,
-        description: col.description || undefined,
       };
+
+      if (col.type === "number") {
+        if (typeof col.decimalPlaces === "number" && col.decimalPlaces >= 0) {
+          const decimalPlaces = Math.floor(col.decimalPlaces);
+          const multiplier = Math.pow(10, decimalPlaces);
+          const multipleOf = Number((1 / multiplier).toFixed(decimalPlaces));
+          if (Number.isFinite(multipleOf)) {
+            property.multipleOf = multipleOf;
+          }
+          descriptionParts.push(
+            decimalPlaces === 0
+              ? "Return as a whole number."
+              : `Return numeric with ${decimalPlaces} decimal place${decimalPlaces === 1 ? "" : "s"}.`
+          );
+        }
+        if (col.unit?.trim()) {
+          descriptionParts.push(`Unit: ${col.unit.trim()}.`);
+        }
+      }
+
+      property.description = descriptionParts.length ? descriptionParts.join(" ") : undefined;
+      properties[key] = property;
       if (col.required) {
         required.push(key);
       }
@@ -1047,17 +1102,47 @@ export default function Home() {
                     </tr>
                     <tr className="odd:bg-slate-50 even:bg-white">
                       <td className="px-3 py-2 font-semibold text-[11px] uppercase tracking-[0.1em] text-slate-500">
-                        Description
+                        Description / Format
                       </td>
                       {columns.map((col) => (
                         <td key={`${col.id}-description`} className="px-3 py-2 align-top">
-                          <textarea
-                            value={col.description}
-                            onChange={(e) => handleColumnChange(col.id, "description", e.target.value)}
-                            rows={2}
-                            placeholder="What should the model provide?"
-                            className="w-full resize-none rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
-                          />
+                          {col.type === "number" ? (
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="space-y-1">
+                                <label className="text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                                  Decimal places
+                                </label>
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={col.decimalPlaces ?? ""}
+                                  onChange={(e) =>
+                                    handleDecimalPlacesChange(col.id, e.target.value)
+                                  }
+                                  className="w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                                />
+                              </div>
+                              <div className="space-y-1">
+                                <label className="text-[11px] uppercase tracking-[0.1em] text-slate-500">
+                                  Unit (optional)
+                                </label>
+                                <input
+                                  value={col.unit ?? ""}
+                                  onChange={(e) => handleColumnChange(col.id, "unit", e.target.value)}
+                                  placeholder="USD, %, kg"
+                                  className="w-full rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                                />
+                              </div>
+                            </div>
+                          ) : (
+                            <textarea
+                              value={col.description}
+                              onChange={(e) => handleColumnChange(col.id, "description", e.target.value)}
+                              rows={2}
+                              placeholder="What should the model provide?"
+                              className="w-full resize-none rounded-sm border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+                            />
+                          )}
                         </td>
                       ))}
                     </tr>

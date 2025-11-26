@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP, localcontext
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -85,6 +87,103 @@ class EnrichmentResponse(BaseModel):
     trace: list[Dict[str, Any]]
     steps: Optional[list[Dict[str, Any]]] = None
     metrics: Optional[Dict[str, Any]] = None
+    evidence: Optional[Dict[str, Any]] = None
+    plan: Optional[Dict[str, Any]] = None
+
+
+_NUMBER_RE = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def _has_type(schema: Dict[str, Any], target: str) -> bool:
+    schema_type = schema.get("type")
+    if isinstance(schema_type, list):
+        return target in schema_type
+    return schema_type == target
+
+
+def _coerce_decimal(value: Any) -> Optional[Decimal]:
+    """Best-effort conversion of user/LLM-provided values into Decimal."""
+    if isinstance(value, bool):  # bool is a subclass of int; guard explicitly
+        return None
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError):
+            return None
+    if isinstance(value, str):
+        cleaned = value.strip().replace(",", "")
+        match = _NUMBER_RE.search(cleaned)
+        if not match:
+            return None
+        try:
+            return Decimal(match.group(0))
+        except (InvalidOperation, ValueError):
+            return None
+    return None
+
+
+def _round_to_step(value: Decimal, step: Decimal) -> Decimal:
+    """Round a decimal to the nearest multiple of `step`."""
+    if step == 0:
+        return value
+    with localcontext() as ctx:
+        ctx.rounding = ROUND_HALF_UP
+        rounded = (value / step).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * step
+        try:
+            return rounded.quantize(step, rounding=ROUND_HALF_UP)
+        except InvalidOperation:
+            # Fall back to the computed rounded value if quantize fails on exotic steps
+            return rounded
+
+
+def _sanitize_number(value: Any, schema: Dict[str, Any]) -> Any:
+    """Coerce and round numeric values according to schema hints."""
+    decimal_value = _coerce_decimal(value)
+    if decimal_value is None:
+        return value
+
+    multiple_of = schema.get("multipleOf")
+    if multiple_of is not None:
+        try:
+            step = Decimal(str(multiple_of))
+            decimal_value = _round_to_step(decimal_value, step)
+        except (InvalidOperation, ValueError):
+            pass
+
+    try:
+        return float(decimal_value)
+    except (InvalidOperation, ValueError):
+        return value
+
+
+def _sanitize_against_schema(data: Any, schema: Dict[str, Any]) -> Any:
+    """
+    Walk output data and enforce numeric formatting based on the extraction schema.
+
+    Currently enforces:
+    - For number types with `multipleOf`, rounds to the nearest multiple and coerces to a number.
+    """
+    if not isinstance(schema, dict):
+        return data
+
+    if _has_type(schema, "object") and isinstance(data, dict):
+        properties = schema.get("properties") or {}
+        sanitized = dict(data)
+        for key, prop_schema in properties.items():
+            if key in sanitized:
+                sanitized[key] = _sanitize_against_schema(sanitized[key], prop_schema)
+        return sanitized
+
+    if _has_type(schema, "array") and isinstance(data, list):
+        items_schema = schema.get("items")
+        if not items_schema:
+            return data
+        return [_sanitize_against_schema(item, items_schema) for item in data]
+
+    if _has_type(schema, "number") or ("multipleOf" in schema):
+        return _sanitize_number(data, schema)
+
+    return data
 
 
 def _serialize_messages(messages: List[BaseMessage]) -> list[Dict[str, Any]]:
@@ -161,6 +260,7 @@ async def run_enrichment(request: EnrichmentRequest) -> EnrichmentResponse:
     info = result.get("info")
     if info is None:
         raise HTTPException(status_code=500, detail="Graph completed without returning info")
+    info = _sanitize_against_schema(info, request.extraction_schema)
     messages = result.get("messages", [])
     if not messages:
         logger.warning("No messages returned in graph output", extra={"topic": request.topic})
@@ -180,4 +280,11 @@ async def run_enrichment(request: EnrichmentRequest) -> EnrichmentResponse:
     for key in ("input_tokens", "output_tokens", "total_tokens"):
         if key in usage:
             metrics[key] = usage[key]
-    return EnrichmentResponse(info=info, trace=trace, steps=steps or None, metrics=metrics)
+    return EnrichmentResponse(
+        info=info,
+        trace=trace,
+        steps=steps or None,
+        metrics=metrics,
+        evidence=result.get("evidence"),
+        plan=result.get("plan"),
+    )
